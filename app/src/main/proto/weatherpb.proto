@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+message WeatherPb {
+    WeatherCoordPb coord = 1;
+    repeated WeatherConditionPb conditions = 2;
+    WeatherMainPb main = 3;
+    int32 visibility = 4;
+    WindPb wind = 5;
+    CloudsPb clouds = 6;
+    string name = 7;
+}
+
+message WeatherCoordPb {
+    double lon = 1;
+    double lat = 2;
+}
+
+message WeatherConditionPb {
+    int32 id = 1;
+    string main = 2;
+    string description = 3;
+    string icon = 4;
+}
+
+message WeatherMainPb {
+    double temp = 1;
+    double feels_like = 2;
+    double temp_min = 3;
+    double temp_max = 4;
+    int32 pressure = 5;
+    int32 humidity = 6;
+}
+
+message WindPb {
+    double speed = 1;
+    int32 deg = 2;
+}
+
+message CloudsPb {
+    int32 all = 1;
+}
