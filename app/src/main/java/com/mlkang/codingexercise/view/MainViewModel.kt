@@ -1,28 +1,24 @@
 package com.mlkang.codingexercise.view
 
-import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mlkang.codingexercise.data.GeocodingRemoteDataSource
-import com.mlkang.codingexercise.data.WeatherRemoteDataSource
 import com.mlkang.codingexercise.data.WeatherRepository
-import com.mlkang.codingexercise.data.weatherStore
 import com.mlkang.codingexercise.model.Location
-import com.mlkang.codingexercise.model.Weather
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.mapLatest
-import kotlinx.coroutines.launch
-import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 @HiltViewModel
@@ -30,68 +26,49 @@ class MainViewModel @Inject constructor(
     private val geocodingRemoteDataSource: GeocodingRemoteDataSource,
     private val weatherRepository: WeatherRepository
 ) : ViewModel() {
-    private val _textInputState = MutableStateFlow("")
-    val textInputState = _textInputState.asStateFlow()
-
-    private val _locationsState = MutableStateFlow(emptyList<Location>())
-    val locationsState = _locationsState.asStateFlow()
 
     private val _showLocationsState = MutableStateFlow(false)
     val showLocationsState = _showLocationsState.asStateFlow()
 
-    private val _weatherState = MutableStateFlow<Weather?>(null)
-    val weatherState = _weatherState.asStateFlow()
+    private val _textInputState = MutableStateFlow("")
+    val textInputState = _textInputState.asStateFlow()
 
-    private val clickLocationState = MutableSharedFlow<Location>(extraBufferCapacity = 1)
-
-    init {
-        viewModelScope.launch {
-            val storedWeather = weatherRepository.getStoredWeather()
-            if (storedWeather != null) {
-                _weatherState.value = storedWeather
+    val locationsState = textInputState
+        .debounce(300)
+        .mapLatest { text ->
+            if (text.isEmpty()) {
+                emptyList()
+            } else {
+                geocodingRemoteDataSource.locations(text)
             }
         }
-
-        viewModelScope.launch {
-            textInputState
-                .debounce(300)
-                .mapLatest { text ->
-                    if (text.isEmpty()) {
-                        emptyList()
-                    } else {
-                        geocodingRemoteDataSource.locations(text)
-                    }
-                }
-                .catch {
-                    Log.e(MainViewModel::class.simpleName, "Error getting locations", it)
-                }
-                .collect { locations ->
-                    _locationsState.value = locations
-                    _showLocationsState.value = locations.isNotEmpty()
-                }
+        .catch {
+            Log.e(MainViewModel::class.simpleName, "Error getting locations", it)
         }
+        .onEach { locations -> _showLocationsState.value = locations.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-        viewModelScope.launch {
-            clickLocationState
-                .debounce(300)
-                .mapLatest { location ->
-                    weatherRepository.getWeather(location.lat, location.lon)
-                }
-                .catch {
-                    Log.e(MainViewModel::class.simpleName, "Error getting weather", it)
-                }
-                .collect {
-                    _weatherState.value = it
-                    _showLocationsState.value = false
-                }
+    private val clickLocationFlow = MutableSharedFlow<Location>(extraBufferCapacity = 1)
+
+    private val weatherFromClicksFlow = clickLocationFlow
+        .debounce(300)
+        .mapLatest { location ->
+            weatherRepository.getWeather(location.lat, location.lon)
         }
-    }
+        .catch {
+            Log.e(MainViewModel::class.simpleName, "Error getting weather", it)
+        }
+        .onEach { _showLocationsState.value = false }
+        .shareIn(viewModelScope, SharingStarted.Eagerly)
+
+    val weatherState = merge(weatherFromClicksFlow, weatherRepository::getStoredWeather.asFlow())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     fun updateTextInput(text: String) {
         _textInputState.value = text
     }
 
     fun clickLocation(location: Location) {
-        clickLocationState.tryEmit(location)
+        clickLocationFlow.tryEmit(location)
     }
 }
