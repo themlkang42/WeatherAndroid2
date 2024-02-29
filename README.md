@@ -1,4 +1,4 @@
-# Technologies
+### Technologies
 * Kotlin
 * Coroutines
 * Compose
@@ -6,6 +6,6 @@
 * Retrofit with Moshi
 * DataStore
 
-# Architecture
+### Architecture
 * Repository Pattern
 * MVVM
